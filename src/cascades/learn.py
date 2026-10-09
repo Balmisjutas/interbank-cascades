@@ -22,7 +22,7 @@ from .features import ladder
 from .generate import Network, make_network
 from .sim import all_cascades, fragility, hit_share
 
-HIDDEN, EPOCHS, LR = 64, 300, 0.01  # fixed before the runs, never tuned
+HIDDEN, EPOCHS, LR = 64, 300, 0.01  # protocol values, fixed before the first run
 
 
 @dataclass

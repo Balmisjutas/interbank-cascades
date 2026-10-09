@@ -1,4 +1,4 @@
-"""Experiment B. Which banks are fragile? A ladder of simple models, an MLP and a GNN.
+"""Which banks are fragile? A ladder of simple models, an MLP and a GNN.
 
 The protocol is fixed in PREDICTION.md. Rows marked "post-hoc" were added after the
 first run and its review; they are not part of the protocol.
@@ -11,6 +11,7 @@ import warnings
 import numpy as np
 import pandas as pd
 
+from cascades.features import OWN
 from cascades.generate import randomise_edges
 from cascades.learn import (fit_boosting, fit_neural, make_sample, make_samples, score, score_rows,
                             spearman)
@@ -37,7 +38,7 @@ def add(rows, **keys):
 for fam in ("er", "cp"):
     # no model at all: one hand count, and the simulator stopped after two rounds
     def killers(s):
-        return s.X[3][:, 7]
+        return s.X[3][:, OWN.index("n_single_killers")]
 
     def two_rounds(s):
         return fragility(all_cascades(s.net.E, s.net.capital, s.net.lgd, max_rounds=2)[0])

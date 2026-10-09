@@ -1,15 +1,23 @@
 # interbank-cascades
 
-Default cascades on simulated interbank networks, and a fair test of what a graph neural network (GNN) adds to
-simple methods when the task is to find the fragile banks.
+Default cascades on simulated interbank networks, and a like-for-like test of what a graph neural network (GNN)
+adds to simple methods when the task is to find the fragile banks.
 
-This is a small reproduction and an honest comparison. It is not a new method, and it says nothing about real banks:
+What was found:
+
+- Contagion needs weak banks: at realistic capital one failure does little.
+- A GNN uses the links, but only matches gradient boosting with hand-made neighbour features (0.90 to 0.97
+  against 0.93 to 0.97 of bank pairs put in the right order).
+- A single hand count does as well as boosting on a bank's own features.
+
+This is a small reproduction and a like-for-like comparison. It is not a new method, and it says nothing about real banks:
 real bank-to-bank exposures are confidential, so every network here is simulated.
 
 ## See it
 
 An interactive page shows the cascades: choose a network, set the capital of the banks, the loss rate and a common
-shock, then click a bank to make it fail. A second view colours the banks by how fragile they are. Open `docs/index.html` in a browser, or the hosted copy: https://balmisjutas.github.io/interbank-cascades/
+shock, then click a bank to make it fail. A second view colours the banks by how fragile they are.
+Open `docs/index.html` in a browser, or the hosted copy: https://balmisjutas.github.io/interbank-cascades/
 
 [![The interactive page](figures/viewer.png)](https://balmisjutas.github.io/interbank-cascades/)
 
@@ -64,12 +72,14 @@ Each bank draws its own threshold around a mean `tau`, so that banks differ.
 - The grey band is a rough range for European banks. It is my own arithmetic on averages from Working Paper 545:
   equity of 4.2 to 4.7 % of assets, loans to banks of 6.8 to 8.3 % of assets, LGD 60 %, so `tau` is between
   4.2 / (0.6 x 8.3) = 0.84 and 4.7 / (0.6 x 6.8) = 1.15. It is a guide, not a measure, and a mean hides what matters
-  most: the largest single exposure compared with capital.
+  most: the largest single exposure compared with capital. The band uses total equity; with only the buffer above
+  the requirement, `tau` would be lower.
 - Real banks sit where a single failure does little. The learning task below is therefore run in a stressed regime,
   `tau` = 0.5.
 - The EU large-exposure limit makes the same point: one exposure is at most 25 % of Tier 1 capital (CRR article 395,
   with exemptions). With LGD 60 %, a bank at that limit needs 7 failed counterparties to lose all its capital.
-  The generator does NOT impose this limit: at `tau` = 0.5 most links are above it.
+  The generator does NOT impose this limit: at `tau` = 0.5 more than half of the links are above it (70 % on
+  random networks, 53 % on core-periphery networks).
 
 Sanity check against a known result (Gai and Kapadia 2010; 1,000 banks, equal amounts, `tau` = 0.2, no recovery):
 
@@ -88,11 +98,12 @@ commit, with no external timestamp).
 
 Two scores, both computed inside each test network and averaged:
 
-- **order**: among the pairs of banks with different fragility, the share that the model puts in the right order
+- **order** (added after the first run, because of the ties described below): among the pairs of banks with
+  different fragility, the share that the model puts in the right order
   (0.5 is chance). This is the main score.
 - **Spearman** rank correlation, the score fixed in `PREDICTION.md`. It is kept, but it is sensitive to ties: the
   label takes only 5 to 7 distinct values per network and 34 to 45 % of the banks are at zero, so a model loses
-  points for ordering banks that are exactly tied. A perfect score with ties broken at random gets about 0.93.
+  points for ordering banks that are exactly tied. A perfect score with ties broken at random gets about 0.93 (0.925 and 0.931).
 
 ![ladder](figures/ladder.png)
 
@@ -106,18 +117,20 @@ Two scores, both computed inside each test network and averaged:
 | **GNN**, 2 GraphConv layers (protocol) | same as rung 3, plus the links | **0.90** | **0.97** | 0.79 | 0.89 |
 | GNN with early stopping (added after the first run) | same | 0.94 | 0.97 | 0.85 | 0.90 |
 | **Boosting, rung 4** | + sum, mean, max, min, weighted mean of the borrowers' features | **0.93** | **0.97** | 0.84 | 0.89 |
-| Boosting, rung 5 | + PageRank, hub and authority | 0.93 | 0.97 | 0.84 | 0.89 |
+| MLP | same as rung 4 | 0.87 | 0.96 | 0.74 | 0.88 |
+| Boosting, rung 5 | + PageRank, hub and authority (the first run used an eigenvector score that was zero on these networks) | 0.93 | 0.97 | 0.84 | 0.89 |
 | Reference: the simulator cut after 2 rounds | everything, 2 rounds | 0.95 | 0.97 | 0.95 | 0.96 |
 
 What the numbers say (differences are paired over the 15 test networks, with a 95 % interval):
 
 - **The GNN uses the links.** It beats the MLP that has the same inputs: +0.05 on random networks (0.03 to 0.06)
   and +0.08 on core-periphery networks (0.06 to 0.09). With the links removed at test time it falls to the MLP
-  level (0.86 and 0.89). With the links reversed it falls to 0.79 and 0.70.
+  level (0.86 and 0.88). With the links reversed it falls to 0.79 and 0.70.
 - **Under the fixed protocol the GNN does not beat boosting with neighbour features.** Core-periphery: level
   (-0.003, from -0.009 to +0.004). Random: behind by 0.03 (0.02 to 0.04).
-- **That gap comes from how the GNN was trained, not from the GNN.** The protocol trains for 300 epochs with no
-  validation set. With early stopping on 5 held-out training networks, the GNN is level with boosting or slightly
+- **That gap looks like over-training, not a limit of the GNN.** The protocol trains for 300 epochs with no
+  validation set. With early stopping on 5 held-out training networks (25 left for training, at most 600 epochs),
+  the GNN is level with boosting or slightly
   ahead: +0.011 on random networks (0.002 to 0.021) and +0.006 on core-periphery (0.001 to 0.012). This run was
   added after the first results, and boosting got no tuning either, so I read it as "level", not as a win.
 - **One count with no model does as well as boosting on own features.** Most of the signal is the first round.
@@ -125,10 +138,11 @@ What the numbers say (differences are paired over the 15 test networks, with a 9
   the test networks happen after round 1; 20 % and 48 % after round 2.
 - **Centrality adds nothing** once the neighbour features are there (PageRank, hub and authority: +0.002 and 0.000).
 - **Another family of networks.** Trained on one family and tested on the other, boosting keeps its score (0.93
-  and 0.96). The protocol GNN keeps it one way (0.93) and loses it the other way (0.82, unstable across seeds); the
+  and 0.95). The protocol GNN keeps it one way (0.93) and loses it the other way (0.82, unstable across seeds); the
   MLP with neighbour features fails the same way. The early-stopped GNN keeps it both ways (0.94 and 0.94).
-- **Top 10 %.** Precision in the top 10 % shows no measurable difference between the GNN and boosting. Ties make
-  this score generous (16 to 18 banks count as "top 10"), so I do not lean on it.
+- **Top 10 %.** Precision in the top 10 % shows no measurable difference between the protocol GNN and boosting.
+  The early-stopped GNN is ahead on random networks (0.84 against 0.69; +0.15, from 0.05 to 0.24) and level on
+  core-periphery networks. Ties make this score generous (16 to 18 banks count as "top 10"), so I do not lean on it.
 - **Second label** (share of scenarios in which a bank loses more than 10 % of its capital, the definition of ACPR
   Débats économiques et financiers no. 15, which uses a clearing model, not this rule): same order. Rung 3: 0.78
   and 0.89; rung 4: 0.85 and 0.95; GNN: 0.84 and 0.94.
@@ -138,16 +152,19 @@ What the numbers say (differences are paired over the 15 test networks, with a 9
 Degree-preserving edge randomisation at test time: pairs of links are swapped, so that every lender keeps its
 number of borrowers and the amounts it lent, and every borrower keeps its number of lenders (not the amounts it
 owes). Only who is linked to whom changes. The labels stay those of the original network. The reference is the
-simulator itself, run on the new links. The x-axis is the share of links that really changed place.
+simulator itself, run on the new links. The x-axis is the share of links that really changed place. The scores
+in this section are Spearman.
 
 ![control](figures/control.png)
 
 - Models that see only the bank itself do not move, as they must.
 - Boosting with neighbour features and the GNN both fall as links move. They fall less than the reference
-  (0.06 to 0.09 against 0.17 to 0.20 when about 55 to 60 % of the links have moved), because most of their score
+  (0.06 to 0.09 against 0.17 to 0.20 when 54 to 62 % of the links have moved), because most of their score
   comes from the bank's own features.
 - Scored against the labels of the NEW network, both keep their level (0.83 and 0.90 for boosting, 0.80 and 0.90
-  for the GNN, Spearman). Both follow the links that they are given.
+  for the GNN). Both follow the links that they are given.
+- On random networks, with most links moved, the models that use links score below the model that ignores them
+  (0.70 and 0.74 against 0.78): wrong links cost more than no links.
 
 ### Predictions against results
 
@@ -155,7 +172,7 @@ simulator itself, run on the new links. The x-axis is the share of links that re
 |---|---|
 | The GNN beats the MLP with the same inputs | Yes |
 | The GNN does not beat boosting with neighbour features | Yes under the protocol; level with early stopping |
-| Centrality adds little | Yes for PageRank, hub and authority. The first run used an eigenvector score that was silently zero; fixed after review |
+| Centrality adds little | Yes for PageRank, hub and authority. The first run used an eigenvector score that was zero on these networks; replaced after the first run |
 | Under randomisation, own-feature models do not move; the others fall about as much as the reference | Partly: they fall, but by less than half of the reference |
 | On the 10 % loss label, own exposures are already close to the best score | No: neighbour information adds 0.06 to 0.07 |
 
@@ -168,8 +185,9 @@ simulator itself, run on the new links. The x-axis is the share of links that re
 - One cascade rule: solvency only, fixed LGD. No liquidity hoarding, no fire sales.
 - A stressed regime. At realistic capital the label is almost all zeros.
 - No tuning of any model beyond the early-stopping run. The first protocol had no validation set; that was a
-  weakness of the protocol, found by a review after the first run. The changes made after that review are marked
-  in the table and in the code (`post-hoc`).
+  weakness of the protocol, found after the first run. Added after the first run: the order score, the two
+  "no model" rows, the cascade-depth numbers, the early-stopping run, PageRank in place of the eigenvector score,
+  and the last point of the control.
 - The label has few distinct values. The choice of the score changes some conclusions; both scores are shown.
 
 ## Prior work
@@ -183,8 +201,11 @@ simulator itself, run on the new links. The x-axis is the share of links that re
 - Balmaseda, Coronado, de Cadenas-Santiago (2023), "Predicting systemic risk in financial systems using Deep Graph
   Learning": GNNs beat classic models, but those models get no network feature and the split is over the nodes of
   one graph.
-- Uddin (2026), arXiv 2604.14232: XGBoost is level with the GNN (0.944 against 0.939).
-- Hussain et al. (2021) and Fosdick et al. (2018) for the edge-randomisation control.
+- Uddin (2026), arXiv 2604.14232: XGBoost is slightly ahead of the best GNN (AUPRC 0.944 against 0.939).
+- Craig and von Peter (2014), "Interbank tiering and money center banks", for the core-periphery structure.
+- Hussain, Duricic, Lex, Kern, Helic (2021), "The interplay between communities and homophily in semi-supervised
+  classification using graph neural networks", and Fosdick, Larremore, Nishimura, Ugander (2018), "Configuring
+  random graph models with fixed degree sequences", for the edge-randomisation control.
 
 ## Run it
 
@@ -193,9 +214,11 @@ simulator itself, run on the new links. The x-axis is the share of links that re
     uv run python experiments/01_regimes.py         # about 15 seconds
     uv run python experiments/02_compare.py         # about 10 minutes on a laptop CPU
     uv run python experiments/03_figures.py
-    uv run python experiments/05_tables.py          # every number quoted above
     uv run python experiments/04_export_viewer.py   # data of the interactive page
-    node tests/viewer.test.mjs
+    uv run python experiments/05_tables.py          # the numbers quoted above
+    node tests/viewer.test.mjs                      # needs Node
 
 `src/cascades/sim.py` is the cascade rule (about 40 lines for one cascade). `tests/test_sim.py` has four cases
-solved by hand and eight properties of the rule.
+solved by hand and eleven properties of the rule, the features and the score.
+
+Author: Felipe Alvarez. Licence: MIT.

@@ -116,7 +116,7 @@ def randomise_edges(net: Network, fraction: float, rng) -> Network:
     whom changes.
     `fraction` * (number of links) / 2 swaps are made. A link can be picked more
     than once, so the share of links that really change place is lower than
-    `fraction` (about 55 to 60 % at fraction 1.0). Measure it; do not assume it.
+    `fraction` (54 to 62 % at fraction 1.0). Measure it; do not assume it.
     """
     E = net.E.copy()
     lenders, borrowers = np.nonzero(E)

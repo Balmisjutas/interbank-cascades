@@ -30,13 +30,13 @@ def regimes():
         for fam, (name, color) in FAMILY.items():
             d = df[df.family == fam]
             ax.plot(d.tau, d[col], marker="o", color=color, label=name)
-        ax.axvspan(0.85, 1.1, color=GREY, alpha=0.15, lw=0)
+        ax.axvspan(0.84, 1.15, color=GREY, alpha=0.15, lw=0)  # rough range of European banks, see README
         ax.set_title(title)
         ax.set_xlabel("mean threshold tau")
         ax.set_ylim(bottom=0)
     axes[0].legend(loc="upper right")
     top = axes[2].get_ylim()[1]
-    axes[2].text(0.975, 0.62 * top, "rough range of\nEuropean banks\n(WP 545 averages)", color=MUTED,
+    axes[2].text(0.995, 0.62 * top, "rough range of\nEuropean banks\n(WP 545 averages)", color=MUTED,
                  fontsize=8, ha="center", va="center")
     fig.suptitle("Contagion needs weak banks: at tau = 0.4 or below, the worst case takes most of the system",
                  x=0.01, ha="left", fontsize=11, fontweight="bold")
@@ -54,13 +54,13 @@ def gai_kapadia():
     ax.set_xlabel("average number of borrowers per bank")
     ax.set_ylabel("share")
     ax.set_ylim(0, 1.05)
-    ax.set_title("Robust yet fragile: above about 4 links per bank a crisis\nis rarer, but when it comes it takes every bank")
+    ax.set_title("Robust yet fragile: above about 4 borrowers per bank a crisis\nis rarer, but when it comes it takes nearly every bank")
     fig.tight_layout()
     fig.savefig("figures/gai_kapadia.png", dpi=160)
 
 
 ORDER = ["no model: count of single killers", "boosting rung 1", "boosting rung 2", "boosting rung 3", "mlp rung 3",
-         "gnn (rung 3 inputs)", "post-hoc: gnn, early stopping", "boosting rung 4", "boosting rung 5",
+         "gnn (rung 3 inputs)", "post-hoc: gnn, early stopping", "boosting rung 4", "mlp rung 4", "boosting rung 5",
          "no model: simulator, 2 rounds"]
 NICE = {"no model: count of single killers": "no model: one hand count",
         "boosting rung 1": "boosting: own threshold", "boosting rung 2": "boosting: + size, degree",
@@ -68,6 +68,7 @@ NICE = {"no model: count of single killers": "no model: one hand count",
         "gnn (rung 3 inputs)": "GNN: own features + links",
         "post-hoc: gnn, early stopping": "GNN with early stopping (added later)",
         "boosting rung 4": "boosting: + neighbour features",
+        "mlp rung 4": "MLP: + neighbour features",
         "boosting rung 5": "boosting: + centrality",
         "no model: simulator, 2 rounds": "reference: simulator cut at 2 rounds"}
 
@@ -75,7 +76,7 @@ NICE = {"no model: count of single killers": "no model: one hand count",
 def ladder():
     df = pd.read_csv("results/scores.csv")
     df = df[(df.label == "y") & (df.train == df.test)]
-    fig, axes = plt.subplots(1, 2, figsize=(11, 4.4), sharey=True, sharex=True)
+    fig, axes = plt.subplots(1, 2, figsize=(11, 4.8), sharey=True, sharex=True)
     for ax, (fam, (name, color)) in zip(axes, FAMILY.items()):
         per_seed = df[df.train == fam].groupby(["model", "seed"]).concordance.mean()
         d = per_seed.groupby("model").agg(["mean", "min", "max"]).reindex(ORDER)
@@ -113,7 +114,7 @@ def control():
         ax.set_ylim(0.6, 1.02)
         ax.set_xlim(-3, 100)
     axes[0].set_ylabel("rank correlation with the ORIGINAL labels")
-    axes[0].legend(loc="lower left", fontsize=8, ncols=2)
+    axes[0].legend(loc="lower left", fontsize=8, ncols=1)
     fig.suptitle("Control: move the links, keep the old labels. Models that use the links fall; the others do not move",
                  x=0.01, ha="left", fontsize=11, fontweight="bold")
     fig.tight_layout(rect=(0, 0, 1, 0.93))

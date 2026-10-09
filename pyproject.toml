@@ -1,7 +1,7 @@
 [project]
 name = "interbank-cascades"
 version = "0.1.0"
-description = "Default cascades on simulated interbank networks, and a fair test of what a GNN adds"
+description = "Default cascades on simulated interbank networks, and a like-for-like test of what a GNN adds"
 requires-python = ">=3.12,<3.14"
 dependencies = [
     "numpy",

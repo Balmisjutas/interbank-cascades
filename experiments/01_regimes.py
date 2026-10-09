@@ -1,4 +1,4 @@
-"""Experiment A. In which regime does contagion exist at all?
+"""In which regime does contagion exist at all?
 
 Part 1: sweep the mean threshold tau for both network families.
 Part 2: sanity check against a known result (Gai and Kapadia 2010): on a random

@@ -1,6 +1,8 @@
 // The cascade rule of the page. Same rule as src/cascades/sim.py:
 // a bank fails when LGD * (what it lent to failed banks) >= its capital.
 // net.links holds [lender, borrower, amount].
+// The value of LGD does not matter here: it cancels between capitalOf and cascade.
+// Capital, loss rate and common shock act through tau only (see index.html, tauNow).
 const LGD = 0.6;
 
 function prepare(net) {

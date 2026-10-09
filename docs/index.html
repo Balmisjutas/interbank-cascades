@@ -17,6 +17,11 @@
       --trigger: #eb6834; --r1: #2a78d6; --r2: #5598e7; --r3: #9ec5f4; --r4: #e6f0fd; --accent: #3987e5;
     }
   }
+  :root[data-theme="dark"] {
+    --surface: #1a1a19; --panel: #242422; --ink: #ffffff; --ink2: #c3c2b7; --muted: #96958b;
+    --line: #3a3a36; --link: #55544e; --bank: #4a4944; --bank-edge: #7a7970;
+    --trigger: #eb6834; --r1: #2a78d6; --r2: #5598e7; --r3: #9ec5f4; --r4: #e6f0fd; --accent: #3987e5;
+  }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--surface); color: var(--ink);
          font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
@@ -29,7 +34,7 @@
                    border-radius: 6px; padding: 6px 10px; }
   button { cursor: pointer; }
   button:hover, select:hover { border-color: var(--accent); }
-  input[type=range] { width: 260px; accent-color: var(--accent); }
+  input[type=range] { accent-color: var(--accent); }
   .tau-value { font-variant-numeric: tabular-nums; color: var(--ink); font-weight: 600; }
   .controls input[type=range] { width: 190px; }
   .formula { background: var(--panel); border-radius: 8px; padding: 8px 12px; margin: 0 0 14px; font-size: 14px; color: var(--ink2); }
@@ -38,7 +43,7 @@
   .seg button { border: 0; border-radius: 0; background: var(--surface); color: var(--ink2); }
   .seg button[aria-pressed=true] { background: var(--accent); color: #fff; }
   .layout { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(280px, 1fr); gap: 20px; }
-  @media (max-width: 820px) { .layout { grid-template-columns: 1fr; } input[type=range] { width: 100%; } }
+  @media (max-width: 820px) { .layout { grid-template-columns: 1fr; } .controls label, .controls input[type=range] { width: 100%; } }
   .card { background: var(--panel); border-radius: 10px; padding: 14px; }
   #net { width: 100%; height: auto; display: block; touch-action: manipulation; }
   .tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 14px; }
@@ -47,7 +52,6 @@
   .tile span { font-size: 12px; color: var(--ink2); }
   h2 { font-size: 14px; margin: 14px 0 6px; }
   .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--ink2); margin-top: 10px; }
-  .legend i { display: inline-block; width: 11px; height: 11px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; }
   #strip { width: 100%; height: 110px; display: block; }
   .note { font-size: 13px; color: var(--ink2); margin: 8px 0 0; }
   #tip { position: fixed; pointer-events: none; background: var(--ink); color: var(--surface); font-size: 12px;
@@ -109,7 +113,7 @@
         <p>tau is the share of its lending that a bank can lose before it fails: capital after the shock, divided by the loss
         rate and by what the bank lends. The three sliders are therefore one single knob. Two settings with the same tau give
         exactly the same cascades. A low tau means weak banks. Banks differ: each one has its own threshold around the mean.
-        Real banks sit at high values (about 0.85 to 1.15 on rough averages), where one failure does little; the low values
+        Real banks sit at high values (about 0.84 to 1.15 on rough averages), where one failure does little; the low values
         are a stressed case.</p>
         <p>The rule is the sequential default algorithm (Furfine 2003) with a fixed loss given default.
         Only one channel of contagion is modelled (solvency). The page runs the same rule as the Python code of the
@@ -133,7 +137,6 @@ if (forced) document.documentElement.dataset.theme = forced;
 <script src="cascade.js"></script>
 <script>
 const SIZE = 700, PAD = 26;
-const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 const roundColor = (r) => r === 0 ? "var(--trigger)" : r < 0 ? "var(--bank)" : `var(--r${Math.min(r, 4)})`;
 const svgEl = (name, attrs) => {
   const e = document.createElementNS("http://www.w3.org/2000/svg", name);
@@ -152,7 +155,9 @@ const hideTip = () => { tip.style.opacity = 0; };
 let net, prep, capital, all, trigger = null, shown = 99, timer = null, view = "cascade";
 // capital c (share of lending), loss rate LGD and common shock s combine into one threshold
 const tauNow = () => (+$("cap").value / 100) * (1 - +$("shock").value / 100) / (+$("lgd").value / 100);
-const fragColor = (f, max) => f <= 0 ? "var(--bank)" : `var(--r${Math.min(4, 1 + Math.floor(3.999 * f / max))})`;
+// fixed bins, so that a colour means the same thing at every setting
+const FRAG_BINS = [0.02, 0.05, 0.10];
+const fragColor = (f) => f <= 0 ? "var(--bank)" : `var(--r${1 + FRAG_BINS.filter((b) => f >= b).length})`;
 
 NETWORKS.forEach((n, i) => $("which").add(new Option(n.label, i)));
 
@@ -169,7 +174,7 @@ function buildNetwork() {
   for (let i = 0; i < net.n; i++) {
     const [cx, cy] = xy(i);
     const r = 5 + 9 * Math.sqrt(prep.assets[i] / maxA);
-    const c = svgEl("circle", { class: "bank", cx, cy, r, "data-i": i, tabindex: 0, fill: "var(--bank)" });
+    const c = svgEl("circle", { class: "bank", cx, cy, r, "data-i": i, tabindex: 0, fill: "var(--bank)", "aria-label": `Bank ${i + 1}` });
     c.addEventListener("click", () => fail(i));
     c.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fail(i); } });
     c.addEventListener("mousemove", (e) => showTip(e, bankTip(i)));
@@ -185,7 +190,7 @@ function bankTip(i) {
     all.rounds[trigger][i] === 0 ? "<br><b>Failed first</b>" :
     all.rounds[trigger][i] > 0 ? `<br><b>Fails in round ${all.rounds[trigger][i]}</b>` : "<br>Survives";
   return `<b>Bank ${i + 1}</b><br>Lends to ${nb} banks, borrows from ${nl}` +
-    `<br>Fails if it loses ${(100 * tauNow() * net.strength[i]).toFixed(0)} % of its lending` +
+    (tauNow() * net.strength[i] > 1 ? `<br>Cannot fail from interbank losses alone` : `<br>Fails if it loses ${(100 * tauNow() * net.strength[i]).toFixed(0)} % of its lending`) +
     `<br>If it fails first: ${all.sizes[i]} others fall` +
     `<br>Falls in ${(100 * all.fragility[i]).toFixed(0)} % of the other banks' failures${state}`;
 }
@@ -193,10 +198,9 @@ function bankTip(i) {
 function paint() {
   const frag = view === "frag";
   const rounds = trigger === null || frag ? null : all.rounds[trigger];
-  const fmax = Math.max(...all.fragility, 1e-9);
   document.querySelectorAll("#banks circle").forEach((c) => {
     const i = +c.dataset.i, r = rounds ? rounds[i] : -1;
-    c.setAttribute("fill", frag ? fragColor(all.fragility[i], fmax) : roundColor(r >= 0 && r <= shown ? r : -1));
+    c.setAttribute("fill", frag ? fragColor(all.fragility[i]) : roundColor(r >= 0 && r <= shown ? r : -1));
   });
   document.querySelectorAll("#links line").forEach((l) => {
     const [i, j] = net.links[+l.dataset.k];
@@ -241,7 +245,9 @@ function strip() {
   });
   const t1 = svgEl("text", { x: 0, y: H - 4, "font-size": 11, fill: "var(--muted)" }); t1.textContent = "most damaging bank";
   const t2 = svgEl("text", { x: W, y: H - 4, "font-size": 11, fill: "var(--muted)", "text-anchor": "end" }); t2.textContent = "least";
-  const t3 = svgEl("text", { x: 2, y: top + 10, "font-size": 11, fill: "var(--ink2)" }); t3.textContent = `worst case: ${max === 1 && !all.sizes.some(Boolean) ? 0 : max} banks`;
+  const worst = Math.max(...all.sizes);
+  const t3 = svgEl("text", { x: W, y: top + 10, "font-size": 11, fill: "var(--ink2)", "text-anchor": "end" });
+  t3.textContent = `worst case: ${worst} ${worst === 1 ? "bank" : "banks"}`;
   svg.append(t1, t2, t3);
   const mean = all.sizes.reduce((a, b) => a + b, 0) / net.n;
   $("strip-note").textContent = `On average ${mean.toFixed(1)} other banks fall. In the worst case ${Math.max(...all.sizes)} fall. Click a bar to see that case.`;
@@ -267,6 +273,7 @@ function reading() {
 function animate() {
   clearInterval(timer);
   if (trigger === null) return;
+  if (view !== "cascade") setView("cascade");
   const last = Math.max(...all.rounds[trigger]);
   if (matchMedia("(prefers-reduced-motion: reduce)").matches) { shown = 99; paint(); return; }
   shown = 0; paint();
@@ -280,16 +287,20 @@ function setView(v) {
   clearInterval(timer); shown = 99; tiles(); paint();
 }
 
-function fail(i) { trigger = i; if (view !== "cascade") setView("cascade"); tiles(); animate(); }
+function fail(i) { trigger = i; tiles(); animate(); }
 
 function recompute(keepTrigger) {
   const tau = tauNow();
   capital = capitalOf(net, prep, tau);
   all = allCascades(net, prep, capital);
   $("capv").textContent = $("cap").value + " %"; $("lgdv").textContent = $("lgd").value + " %"; $("shockv").textContent = $("shock").value + " %";
-  $("formula").innerHTML = `On average a bank fails when it has lost <b>${(100 * tau).toFixed(0)} %</b> of what it lent ` +
-    `(threshold tau = capital after shock / loss rate = <b>${tau.toFixed(2)}</b>). ` +
-    (tau >= 0.85 ? "This is the range of real banks: one failure does little." : tau >= 0.6 ? "Banks are weaker than real ones." : "This is a stressed case: banks are much weaker than real ones.");
+  const where = tau > 1.15 ? "Banks are stronger than the rough range of real banks." :
+    tau >= 0.84 ? "This is the rough range of real banks (averages, total equity): one failure does little." :
+    tau >= 0.6 ? "Banks are weaker than real ones." : "This is a stressed case: banks are much weaker than real ones.";
+  $("formula").innerHTML = (tau >= 1
+    ? `On average a bank cannot fail from these losses alone: its capital covers the loss on all its lending `
+    : `On average a bank fails when it has lost <b>${(100 * tau).toFixed(0)} %</b> of what it lent `) +
+    `(threshold tau = capital after shock / loss rate = <b>${tau.toFixed(2)}</b>). ` + where;
   if (!keepTrigger) trigger = null;
   shown = 99; clearInterval(timer);
   tiles(); strip(); tables(); reading(); paint();
@@ -305,8 +316,8 @@ const dot = (color) => `<svg width="12" height="12" viewBox="0 0 12 12" style="v
 function legend() {
   $("legend").innerHTML = view === "frag"
     ? `<span>${dot("var(--bank)")}never brought down</span>` +
-      [1, 2, 3, 4].map((r) => `<span>${dot(`var(--r${r})`)}${["sometimes", "more often", "often", "most often"][r - 1]}</span>`).join("") +
-      `<span>Colour: in how many of the other banks' failures this bank falls</span>`
+      [1, 2, 3, 4].map((r) => `<span>${dot(`var(--r${r})`)}${["under 2 %", "2 to 5 %", "5 to 10 %", "10 % or more"][r - 1]}</span>`).join("") +
+      `<span>Colour: the share of the other banks' failures that bring this bank down</span>`
     : `<span>${dot("var(--bank)")}survives</span><span>${dot("var(--trigger)")}fails first</span>` +
       [1, 2, 3].map((r) => `<span>${dot(`var(--r${r})`)}fails in round ${r}</span>`).join("") +
       `<span>${dot("var(--r4)")}round 4 or later</span><span>Thick line: a loss that brought a bank down. Thin coloured line: a loss that the lender survived. Dot size: how much the bank lends</span>`;
@@ -317,7 +328,7 @@ $("v-cascade").addEventListener("click", () => setView("cascade"));
 $("v-frag").addEventListener("click", () => setView("frag"));
 $("worst").addEventListener("click", () => fail(all.sizes.indexOf(Math.max(...all.sizes))));
 $("replay").addEventListener("click", animate);
-window.addEventListener("resize", strip);
+window.addEventListener("resize", () => { strip(); paint(); });
 load();
 fail(all.sizes.indexOf(Math.max(...all.sizes)));
 </script>

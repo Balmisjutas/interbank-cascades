@@ -2,7 +2,9 @@
 
 import numpy as np
 
-from cascades.generate import make_network, randomise_edges
+from cascades.features import OWN, own_features
+from cascades.generate import common_shock, make_network, randomise_edges
+from cascades.learn import concordance
 from cascades.sim import all_cascades, cascade, fragility, importance
 
 LGD = 0.6
@@ -109,3 +111,31 @@ def test_edge_randomisation_keeps_what_it_says_it_keeps():
     assert np.allclose(np.sort(net.E, axis=1), np.sort(new.E, axis=1))  # each lender's amounts
     assert np.diag(new.E).sum() == 0
     assert ((net.E > 0) != (new.E > 0)).sum() > 300  # and the links really moved
+
+
+def test_a_common_shock_is_a_lower_threshold():
+    net = make_network("er", seed=8, tau_mean=0.8)
+    shocked = common_shock(net, 0.25)
+    weaker = make_network("er", seed=8, tau_mean=0.6)  # 0.8 * (1 - 0.25)
+    lends = net.E.sum(axis=1) > 0  # a bank that lends to nobody cannot be hit; its capital is arbitrary
+    assert np.allclose(shocked.tau, 0.75 * net.tau)
+    assert np.allclose(shocked.capital[lends], weaker.capital[lends])
+    F1, _, _ = all_cascades(shocked.E, shocked.capital, shocked.lgd)
+    F2, _, _ = all_cascades(weaker.E, weaker.capital, weaker.lgd)
+    assert (F1 == F2).all()
+
+
+def test_the_hand_count_is_the_first_round():
+    # "single killers" of a bank = borrowers whose failure alone wipes out its capital
+    net = make_network("cp", seed=9, tau_mean=0.5)
+    F, _, _ = all_cascades(net.E, net.capital, net.lgd, max_rounds=1)
+    count = own_features(net)[:, OWN.index("n_single_killers")]
+    assert np.allclose(count, F.sum(axis=0) - 1)
+
+
+def test_order_score():
+    y = np.array([0.0, 0.0, 1.0, 2.0])
+    assert concordance(y, y) == 1.0
+    assert concordance(y, -y) == 0.0
+    assert concordance(y, np.zeros(4)) == 0.5
+    assert concordance(y, np.array([5.0, -5.0, 6.0, 7.0])) == 1.0  # the order inside a tie does not count
