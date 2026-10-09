@@ -6,6 +6,16 @@ simple methods when the task is to find the fragile banks.
 This is a small reproduction and an honest comparison. It is not a new method, and it says nothing about real banks:
 real bank-to-bank exposures are confidential, so every network here is simulated.
 
+## See it
+
+An interactive page shows the cascades: choose a network, set how strong the banks are, click a bank to make it
+fail. Open `docs/index.html` in a browser, or the hosted copy: https://balmisjutas.github.io/interbank-cascades/
+
+[![The interactive page](figures/viewer.png)](https://balmisjutas.github.io/interbank-cascades/)
+
+The page runs the same rule in JavaScript. `node tests/viewer.test.mjs` checks that it gives the same 1,800
+cascades as the Python simulator.
+
 ## The question
 
 1. When one bank fails, in which conditions do other banks fail after it?
@@ -148,6 +158,8 @@ the original network. The reference is the simulator itself, run on the new link
     uv run python experiments/01_regimes.py    # about 15 seconds
     uv run python experiments/02_compare.py    # about 8 minutes on a laptop CPU
     uv run python experiments/03_figures.py
+    uv run python experiments/04_export_viewer.py   # data of the interactive page
+    node tests/viewer.test.mjs
 
 `src/cascades/sim.py` is the cascade rule (about 40 lines for one cascade). `tests/test_sim.py` has four cases
 solved by hand and eight properties of the rule.

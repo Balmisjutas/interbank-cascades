@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Interbank default cascades</title>
+<style>
+  :root {
+    --surface: #fcfcfb; --panel: #f3f2ed; --ink: #1a1a19; --ink2: #55544e; --muted: #7a7970;
+    --line: #dddcd4; --link: #b9b8ae; --bank: #c9c8c0; --bank-edge: #8f8e85;
+    --trigger: #eb6834; --r1: #86b6ef; --r2: #3987e5; --r3: #1c5cab; --r4: #0d366b; --accent: #2a78d6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --surface: #1a1a19; --panel: #242422; --ink: #ffffff; --ink2: #c3c2b7; --muted: #96958b;
+      --line: #3a3a36; --link: #55544e; --bank: #4a4944; --bank-edge: #7a7970;
+      --trigger: #d95926; --r1: #184f95; --r2: #2a78d6; --r3: #6da7ec; --r4: #cde2fb; --accent: #3987e5;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--surface); color: var(--ink);
+         font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 1120px; margin: 0 auto; padding: 20px 16px 40px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  p.lead { margin: 0 0 16px; color: var(--ink2); max-width: 75ch; }
+  .controls { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: end; margin-bottom: 14px; }
+  .controls label { display: grid; gap: 4px; font-size: 13px; color: var(--ink2); }
+  select, button { font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line);
+                   border-radius: 6px; padding: 6px 10px; }
+  button { cursor: pointer; }
+  button:hover, select:hover { border-color: var(--accent); }
+  input[type=range] { width: 260px; accent-color: var(--accent); }
+  .tau-value { font-variant-numeric: tabular-nums; color: var(--ink); font-weight: 600; }
+  .layout { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(280px, 1fr); gap: 20px; }
+  @media (max-width: 820px) { .layout { grid-template-columns: 1fr; } input[type=range] { width: 100%; } }
+  .card { background: var(--panel); border-radius: 10px; padding: 14px; }
+  #net { width: 100%; height: auto; display: block; touch-action: manipulation; }
+  .tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 14px; }
+  .tile { background: var(--surface); border-radius: 8px; padding: 10px; }
+  .tile b { display: block; font-size: 26px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .tile span { font-size: 12px; color: var(--ink2); }
+  h2 { font-size: 14px; margin: 14px 0 6px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--ink2); margin-top: 10px; }
+  .legend i { display: inline-block; width: 11px; height: 11px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; }
+  #strip { width: 100%; height: 110px; display: block; }
+  .note { font-size: 13px; color: var(--ink2); margin: 8px 0 0; }
+  #tip { position: fixed; pointer-events: none; background: var(--ink); color: var(--surface); font-size: 12px;
+         padding: 6px 8px; border-radius: 6px; max-width: 240px; opacity: 0; transition: opacity .1s; z-index: 5; }
+  .bank { cursor: pointer; stroke: var(--surface); stroke-width: 1.5; }
+  .bank:hover, .bank:focus { stroke: var(--ink); outline: none; }
+  .bar { cursor: pointer; }
+  details { margin-top: 14px; font-size: 13px; color: var(--ink2); }
+  table { border-collapse: collapse; font-size: 12px; margin-top: 8px; width: 100%; }
+  th, td { text-align: right; padding: 2px 6px; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Interbank default cascades</h1>
+  <p class="lead">Each dot is a bank. Each line is a loan between two banks. Click a bank to make it fail. A bank that
+  lent to a failed bank loses 60&nbsp;% of that loan, and fails if the losses reach its capital. All networks are simulated.</p>
+
+  <div class="controls">
+    <label>Network <select id="which"></select></label>
+    <label>Strength of the banks (mean threshold tau): <span class="tau-value" id="tauv"></span>
+      <input id="tau" type="range" min="0.15" max="1.25" step="0.05" value="0.5">
+    </label>
+    <button id="worst">Show the worst case</button>
+    <button id="replay">Replay</button>
+  </div>
+
+  <div class="layout">
+    <div class="card">
+      <svg id="net" viewBox="0 0 700 700" role="img" aria-label="Network of banks"></svg>
+      <div class="legend" id="legend"></div>
+    </div>
+    <div>
+      <div class="tiles">
+        <div class="tile"><b id="t-size">0</b><span>other banks fail</span></div>
+        <div class="tile"><b id="t-rounds">0</b><span>rounds of contagion</span></div>
+        <div class="tile"><b id="t-share">0&nbsp;%</b><span>of the 100 failures spread</span></div>
+      </div>
+      <div class="card">
+        <h2 style="margin-top:0">If each bank failed first: how many others fall</h2>
+        <svg id="strip" role="img" aria-label="Cascade size for each of the 100 banks"></svg>
+        <p class="note" id="strip-note"></p>
+      </div>
+      <p class="note" id="reading"></p>
+      <details>
+        <summary>What tau means, and the limits</summary>
+        <p>tau is the share of its lending that a bank can lose before it fails. A low tau means weak banks. Banks differ:
+        each one has its own threshold around the mean that you set. Real banks sit at high values, where one failure
+        does little; the low values are a stressed case.</p>
+        <p>The rule is the sequential default algorithm (Furfine 2003) with a fixed loss given default of 60&nbsp;%.
+        Only one channel of contagion is modelled (solvency). The page runs the same rule as the Python code of the
+        repository, and a test checks that both give the same 1,800 cascades.</p>
+      </details>
+      <details>
+        <summary>Table of the 10 most damaging and the 10 most fragile banks</summary>
+        <div id="tables"></div>
+      </details>
+    </div>
+  </div>
+</main>
+<div id="tip"></div>
+
+<script>
+// ?theme=light or ?theme=dark overrides the system setting
+const forced = new URLSearchParams(location.search).get("theme");
+if (forced) document.documentElement.dataset.theme = forced;
+</script>
+<script src="networks.js"></script>
+<script src="cascade.js"></script>
+<script>
+const SIZE = 700, PAD = 26;
+const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const roundColor = (r) => r === 0 ? "var(--trigger)" : r < 0 ? "var(--bank)" : `var(--r${Math.min(r, 4)})`;
+const svgEl = (name, attrs) => {
+  const e = document.createElementNS("http://www.w3.org/2000/svg", name);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  return e;
+};
+const $ = (id) => document.getElementById(id);
+const tip = $("tip");
+function showTip(evt, html) {
+  tip.innerHTML = html; tip.style.opacity = 1;
+  const x = Math.min(evt.clientX + 14, window.innerWidth - 250);
+  tip.style.left = x + "px"; tip.style.top = (evt.clientY + 14) + "px";
+}
+const hideTip = () => { tip.style.opacity = 0; };
+
+let net, prep, capital, all, trigger = null, shown = 99, timer = null;
+
+NETWORKS.forEach((n, i) => $("which").add(new Option(n.label, i)));
+
+function xy(i) { return [PAD + net.pos[i][0] * (SIZE - 2 * PAD), PAD + net.pos[i][1] * (SIZE - 2 * PAD)]; }
+
+function buildNetwork() {
+  const svg = $("net"); svg.replaceChildren();
+  const gl = svgEl("g", { id: "links" }), gb = svgEl("g", { id: "banks" });
+  net.links.forEach(([i, j], k) => {
+    const [x1, y1] = xy(i), [x2, y2] = xy(j);
+    gl.append(svgEl("line", { x1, y1, x2, y2, "data-k": k, stroke: "var(--link)", "stroke-width": 0.6, opacity: 0.55 }));
+  });
+  const maxA = Math.max(...prep.assets);
+  for (let i = 0; i < net.n; i++) {
+    const [cx, cy] = xy(i);
+    const r = 5 + 9 * Math.sqrt(prep.assets[i] / maxA);
+    const c = svgEl("circle", { class: "bank", cx, cy, r, "data-i": i, tabindex: 0, fill: "var(--bank)" });
+    c.addEventListener("click", () => fail(i));
+    c.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fail(i); } });
+    c.addEventListener("mousemove", (e) => showTip(e, bankTip(i)));
+    c.addEventListener("mouseleave", hideTip);
+    gb.append(c);
+  }
+  svg.append(gl, gb);
+}
+
+function bankTip(i) {
+  const nb = net.links.filter((l) => l[0] === i).length, nl = prep.lendersOf[i].length;
+  const state = trigger === null ? "" :
+    all.rounds[trigger][i] === 0 ? "<br><b>Failed first</b>" :
+    all.rounds[trigger][i] > 0 ? `<br><b>Fails in round ${all.rounds[trigger][i]}</b>` : "<br>Survives";
+  return `<b>Bank ${i + 1}</b><br>Lends to ${nb} banks, borrows from ${nl}` +
+    `<br>Can lose ${(100 * Math.min(1, +$("tau").value * net.strength[i])).toFixed(0)} % of its lending` +
+    `<br>If it fails first: ${all.sizes[i]} others fall` +
+    `<br>Falls in ${(100 * all.fragility[i]).toFixed(0)} % of the other banks' failures${state}`;
+}
+
+function paint() {
+  const rounds = trigger === null ? null : all.rounds[trigger];
+  document.querySelectorAll("#banks circle").forEach((c) => {
+    const r = rounds ? rounds[+c.dataset.i] : -1;
+    c.setAttribute("fill", roundColor(r >= 0 && r <= shown ? r : -1));
+  });
+  document.querySelectorAll("#links line").forEach((l) => {
+    const [i, j] = net.links[+l.dataset.k];
+    const rj = rounds ? rounds[j] : -1;
+    const on = rj >= 0 && rj < shown;  // the borrower has failed: the lender takes a loss on this loan
+    l.setAttribute("stroke", on ? roundColor(Math.min(rj + 1, 4)) : "var(--link)");
+    l.setAttribute("stroke-width", on ? 1.4 : 0.6);
+    l.setAttribute("opacity", on ? 0.9 : rounds ? 0.25 : 0.55);
+  });
+  document.querySelectorAll("#strip rect.bar").forEach((b) =>
+    b.setAttribute("fill", +b.dataset.i === trigger ? "var(--trigger)" : "var(--accent)"));
+}
+
+function tiles() {
+  const spread = all.sizes.filter((s) => s > 0).length;
+  $("t-share").innerHTML = spread + "&nbsp;%";
+  if (trigger === null) { $("t-size").textContent = "–"; $("t-rounds").textContent = "–"; return; }
+  $("t-size").textContent = all.sizes[trigger];
+  $("t-rounds").textContent = Math.max(...all.rounds[trigger]);
+}
+
+function strip() {
+  const svg = $("strip"); svg.replaceChildren();
+  const W = svg.clientWidth || 360, H = 110, top = 8, bottom = 18;
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  const order = [...all.sizes.keys()].sort((a, b) => all.sizes[b] - all.sizes[a]);
+  const max = Math.max(1, ...all.sizes), bw = W / net.n;
+  svg.append(svgEl("line", { x1: 0, x2: W, y1: H - bottom, y2: H - bottom, stroke: "var(--line)" }));
+  order.forEach((i, k) => {
+    const h = (H - top - bottom) * all.sizes[i] / max;
+    const hit = svgEl("rect", { x: k * bw, y: 0, width: bw, height: H - bottom, fill: "transparent", class: "bar" });
+    const bar = svgEl("rect", { class: "bar", "data-i": i, x: k * bw + 0.5, y: H - bottom - Math.max(h, all.sizes[i] ? 2 : 0),
+      width: Math.max(bw - 1, 1), height: Math.max(h, all.sizes[i] ? 2 : 0), rx: 1, fill: "var(--accent)" });
+    for (const e of [hit, bar]) {
+      e.addEventListener("click", () => fail(i));
+      e.addEventListener("mousemove", (ev) => showTip(ev, `<b>Bank ${i + 1}</b><br>${all.sizes[i]} others fall`));
+      e.addEventListener("mouseleave", hideTip);
+    }
+    svg.append(hit, bar);
+  });
+  const t1 = svgEl("text", { x: 0, y: H - 4, "font-size": 11, fill: "var(--muted)" }); t1.textContent = "most damaging bank";
+  const t2 = svgEl("text", { x: W, y: H - 4, "font-size": 11, fill: "var(--muted)", "text-anchor": "end" }); t2.textContent = "least";
+  const t3 = svgEl("text", { x: 2, y: top + 10, "font-size": 11, fill: "var(--ink2)" }); t3.textContent = `worst case: ${max === 1 && !all.sizes.some(Boolean) ? 0 : max} banks`;
+  svg.append(t1, t2, t3);
+  const mean = all.sizes.reduce((a, b) => a + b, 0) / net.n;
+  $("strip-note").textContent = `On average ${mean.toFixed(1)} other banks fall. In the worst case ${Math.max(...all.sizes)} fall. Click a bar to see that case.`;
+}
+
+function tables() {
+  const top = (arr, f) => [...arr.keys()].sort((a, b) => arr[b] - arr[a]).slice(0, 10)
+    .map((i) => `<tr><td>Bank ${i + 1}</td><td>${f(arr[i])}</td></tr>`).join("");
+  $("tables").innerHTML =
+    `<table><tr><th>Most damaging</th><th>others that fall</th></tr>${top(all.sizes, (v) => v)}</table>` +
+    `<table><tr><th>Most fragile</th><th>share of failures that bring it down</th></tr>${top(all.fragility, (v) => (100 * v).toFixed(0) + " %")}</table>`;
+}
+
+function reading() {
+  const tau = +$("tau").value, worst = Math.max(...all.sizes);
+  $("reading").textContent =
+    worst === 0 ? "At this strength no failure spreads. This is the usual state of a healthy system." :
+    worst < 10 ? "At this strength a failure sometimes brings down a few banks, never many." :
+    worst < 50 ? "At this strength most failures stay small, but a few bring down a large group of banks." :
+    "At this strength the system is fragile: most failures do little, but some take down most of the banks.";
+}
+
+function animate() {
+  clearInterval(timer);
+  if (trigger === null) return;
+  const last = Math.max(...all.rounds[trigger]);
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) { shown = 99; paint(); return; }
+  shown = 0; paint();
+  timer = setInterval(() => { shown += 1; paint(); if (shown > last) clearInterval(timer); }, 650);
+}
+
+function fail(i) { trigger = i; tiles(); animate(); }
+
+function recompute(keepTrigger) {
+  capital = capitalOf(net, prep, +$("tau").value);
+  all = allCascades(net, prep, capital);
+  $("tauv").textContent = (+$("tau").value).toFixed(2);
+  if (!keepTrigger) trigger = null;
+  shown = 99; clearInterval(timer);
+  tiles(); strip(); tables(); reading(); paint();
+}
+
+function load() {
+  net = NETWORKS[+$("which").value]; prep = prepare(net);
+  buildNetwork(); recompute(false);
+}
+
+$("legend").innerHTML =
+  `<span><i style="background:var(--bank)"></i>survives</span><span><i style="background:var(--trigger)"></i>fails first</span>` +
+  [1, 2, 3].map((r) => `<span><i style="background:var(--r${r})"></i>fails in round ${r}</span>`).join("") +
+  `<span><i style="background:var(--r4)"></i>round 4 or later</span><span>Dot size: how much the bank lends</span>`;
+$("which").addEventListener("change", load);
+$("tau").addEventListener("input", () => recompute(true));
+$("worst").addEventListener("click", () => fail(all.sizes.indexOf(Math.max(...all.sizes))));
+$("replay").addEventListener("click", animate);
+window.addEventListener("resize", strip);
+load();
+fail(all.sizes.indexOf(Math.max(...all.sizes)));
+</script>
+</body>
+</html>
