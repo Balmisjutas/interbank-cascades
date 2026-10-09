@@ -14,7 +14,7 @@
     :root:not([data-theme="light"]) {
       --surface: #1a1a19; --panel: #242422; --ink: #ffffff; --ink2: #c3c2b7; --muted: #96958b;
       --line: #3a3a36; --link: #55544e; --bank: #4a4944; --bank-edge: #7a7970;
-      --trigger: #d95926; --r1: #184f95; --r2: #2a78d6; --r3: #6da7ec; --r4: #cde2fb; --accent: #3987e5;
+      --trigger: #eb6834; --r1: #2a78d6; --r2: #5598e7; --r3: #9ec5f4; --r4: #e6f0fd; --accent: #3987e5;
     }
   }
   * { box-sizing: border-box; }
@@ -31,6 +31,12 @@
   button:hover, select:hover { border-color: var(--accent); }
   input[type=range] { width: 260px; accent-color: var(--accent); }
   .tau-value { font-variant-numeric: tabular-nums; color: var(--ink); font-weight: 600; }
+  .controls input[type=range] { width: 190px; }
+  .formula { background: var(--panel); border-radius: 8px; padding: 8px 12px; margin: 0 0 14px; font-size: 14px; color: var(--ink2); }
+  .formula b { color: var(--ink); font-variant-numeric: tabular-nums; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+  .seg button { border: 0; border-radius: 0; background: var(--surface); color: var(--ink2); }
+  .seg button[aria-pressed=true] { background: var(--accent); color: #fff; }
   .layout { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(280px, 1fr); gap: 20px; }
   @media (max-width: 820px) { .layout { grid-template-columns: 1fr; } input[type=range] { width: 100%; } }
   .card { background: var(--panel); border-radius: 10px; padding: 14px; }
@@ -59,16 +65,27 @@
 <main>
   <h1>Interbank default cascades</h1>
   <p class="lead">Each dot is a bank. Each line is a loan between two banks. Click a bank to make it fail. A bank that
-  lent to a failed bank loses 60&nbsp;% of that loan, and fails if the losses reach its capital. All networks are simulated.</p>
+  lent to a failed bank loses part of that loan, and fails if its losses reach its capital. Change the three sliders to see when a failure spreads. All networks are simulated.</p>
 
   <div class="controls">
     <label>Network <select id="which"></select></label>
-    <label>Strength of the banks (mean threshold tau): <span class="tau-value" id="tauv"></span>
-      <input id="tau" type="range" min="0.15" max="1.25" step="0.05" value="0.5">
+    <label><span>Capital: <span class="tau-value" id="capv"></span> of what a bank lends</span>
+      <input id="cap" type="range" min="5" max="75" step="1" value="30">
+    </label>
+    <label><span>Loss when a borrower fails: <span class="tau-value" id="lgdv"></span></span>
+      <input id="lgd" type="range" min="10" max="100" step="5" value="60">
+    </label>
+    <label><span>Shock to all banks first: <span class="tau-value" id="shockv"></span> of capital</span>
+      <input id="shock" type="range" min="0" max="50" step="1" value="0">
+    </label>
+    <label>View
+      <span class="seg"><button id="v-cascade" aria-pressed="true">One failure</button><button id="v-frag" aria-pressed="false">Fragile banks</button></span>
     </label>
     <button id="worst">Show the worst case</button>
     <button id="replay">Replay</button>
   </div>
+
+  <p class="formula" id="formula"></p>
 
   <div class="layout">
     <div class="card">
@@ -89,10 +106,12 @@
       <p class="note" id="reading"></p>
       <details>
         <summary>What tau means, and the limits</summary>
-        <p>tau is the share of its lending that a bank can lose before it fails. A low tau means weak banks. Banks differ:
-        each one has its own threshold around the mean that you set. Real banks sit at high values, where one failure
-        does little; the low values are a stressed case.</p>
-        <p>The rule is the sequential default algorithm (Furfine 2003) with a fixed loss given default of 60&nbsp;%.
+        <p>tau is the share of its lending that a bank can lose before it fails: capital after the shock, divided by the loss
+        rate and by what the bank lends. The three sliders are therefore one single knob. Two settings with the same tau give
+        exactly the same cascades. A low tau means weak banks. Banks differ: each one has its own threshold around the mean.
+        Real banks sit at high values (about 0.85 to 1.15 on rough averages), where one failure does little; the low values
+        are a stressed case.</p>
+        <p>The rule is the sequential default algorithm (Furfine 2003) with a fixed loss given default.
         Only one channel of contagion is modelled (solvency). The page runs the same rule as the Python code of the
         repository, and a test checks that both give the same 1,800 cascades.</p>
       </details>
@@ -130,7 +149,10 @@ function showTip(evt, html) {
 }
 const hideTip = () => { tip.style.opacity = 0; };
 
-let net, prep, capital, all, trigger = null, shown = 99, timer = null;
+let net, prep, capital, all, trigger = null, shown = 99, timer = null, view = "cascade";
+// capital c (share of lending), loss rate LGD and common shock s combine into one threshold
+const tauNow = () => (+$("cap").value / 100) * (1 - +$("shock").value / 100) / (+$("lgd").value / 100);
+const fragColor = (f, max) => f <= 0 ? "var(--bank)" : `var(--r${Math.min(4, 1 + Math.floor(3.999 * f / max))})`;
 
 NETWORKS.forEach((n, i) => $("which").add(new Option(n.label, i)));
 
@@ -163,33 +185,37 @@ function bankTip(i) {
     all.rounds[trigger][i] === 0 ? "<br><b>Failed first</b>" :
     all.rounds[trigger][i] > 0 ? `<br><b>Fails in round ${all.rounds[trigger][i]}</b>` : "<br>Survives";
   return `<b>Bank ${i + 1}</b><br>Lends to ${nb} banks, borrows from ${nl}` +
-    `<br>Can lose ${(100 * Math.min(1, +$("tau").value * net.strength[i])).toFixed(0)} % of its lending` +
+    `<br>Fails if it loses ${(100 * tauNow() * net.strength[i]).toFixed(0)} % of its lending` +
     `<br>If it fails first: ${all.sizes[i]} others fall` +
     `<br>Falls in ${(100 * all.fragility[i]).toFixed(0)} % of the other banks' failures${state}`;
 }
 
 function paint() {
-  const rounds = trigger === null ? null : all.rounds[trigger];
+  const frag = view === "frag";
+  const rounds = trigger === null || frag ? null : all.rounds[trigger];
+  const fmax = Math.max(...all.fragility, 1e-9);
   document.querySelectorAll("#banks circle").forEach((c) => {
-    const r = rounds ? rounds[+c.dataset.i] : -1;
-    c.setAttribute("fill", roundColor(r >= 0 && r <= shown ? r : -1));
+    const i = +c.dataset.i, r = rounds ? rounds[i] : -1;
+    c.setAttribute("fill", frag ? fragColor(all.fragility[i], fmax) : roundColor(r >= 0 && r <= shown ? r : -1));
   });
   document.querySelectorAll("#links line").forEach((l) => {
     const [i, j] = net.links[+l.dataset.k];
     const rj = rounds ? rounds[j] : -1;
     const on = rj >= 0 && rj < shown;  // the borrower has failed: the lender takes a loss on this loan
     l.setAttribute("stroke", on ? roundColor(Math.min(rj + 1, 4)) : "var(--link)");
-    l.setAttribute("stroke-width", on ? 1.4 : 0.6);
-    l.setAttribute("opacity", on ? 0.9 : rounds ? 0.25 : 0.55);
+    const kills = on && rounds[i] > rj && rounds[i] <= shown;  // this loss is part of why the lender failed
+    l.setAttribute("stroke-width", kills ? 1.8 : on ? 0.8 : 0.6);
+    l.setAttribute("opacity", kills ? 0.95 : on ? 0.4 : rounds ? 0.2 : 0.55);
   });
   document.querySelectorAll("#strip rect.bar").forEach((b) =>
-    b.setAttribute("fill", +b.dataset.i === trigger ? "var(--trigger)" : "var(--accent)"));
+    b.setAttribute("fill", +b.dataset.i === trigger && !frag ? "var(--trigger)" : "var(--accent)"));
+  legend();
 }
 
 function tiles() {
   const spread = all.sizes.filter((s) => s > 0).length;
   $("t-share").innerHTML = spread + "&nbsp;%";
-  if (trigger === null) { $("t-size").textContent = "–"; $("t-rounds").textContent = "–"; return; }
+  if (trigger === null || view === "frag") { $("t-size").textContent = "–"; $("t-rounds").textContent = "–"; return; }
   $("t-size").textContent = all.sizes[trigger];
   $("t-rounds").textContent = Math.max(...all.rounds[trigger]);
 }
@@ -203,7 +229,7 @@ function strip() {
   svg.append(svgEl("line", { x1: 0, x2: W, y1: H - bottom, y2: H - bottom, stroke: "var(--line)" }));
   order.forEach((i, k) => {
     const h = (H - top - bottom) * all.sizes[i] / max;
-    const hit = svgEl("rect", { x: k * bw, y: 0, width: bw, height: H - bottom, fill: "transparent", class: "bar" });
+    const hit = svgEl("rect", { x: k * bw, y: 0, width: bw, height: H - bottom, fill: "transparent", class: "hit", style: "cursor:pointer" });
     const bar = svgEl("rect", { class: "bar", "data-i": i, x: k * bw + 0.5, y: H - bottom - Math.max(h, all.sizes[i] ? 2 : 0),
       width: Math.max(bw - 1, 1), height: Math.max(h, all.sizes[i] ? 2 : 0), rx: 1, fill: "var(--accent)" });
     for (const e of [hit, bar]) {
@@ -230,7 +256,7 @@ function tables() {
 }
 
 function reading() {
-  const tau = +$("tau").value, worst = Math.max(...all.sizes);
+  const worst = Math.max(...all.sizes);
   $("reading").textContent =
     worst === 0 ? "At this strength no failure spreads. This is the usual state of a healthy system." :
     worst < 10 ? "At this strength a failure sometimes brings down a few banks, never many." :
@@ -247,12 +273,23 @@ function animate() {
   timer = setInterval(() => { shown += 1; paint(); if (shown > last) clearInterval(timer); }, 650);
 }
 
-function fail(i) { trigger = i; tiles(); animate(); }
+function setView(v) {
+  view = v;
+  $("v-cascade").setAttribute("aria-pressed", v === "cascade");
+  $("v-frag").setAttribute("aria-pressed", v === "frag");
+  clearInterval(timer); shown = 99; tiles(); paint();
+}
+
+function fail(i) { trigger = i; if (view !== "cascade") setView("cascade"); tiles(); animate(); }
 
 function recompute(keepTrigger) {
-  capital = capitalOf(net, prep, +$("tau").value);
+  const tau = tauNow();
+  capital = capitalOf(net, prep, tau);
   all = allCascades(net, prep, capital);
-  $("tauv").textContent = (+$("tau").value).toFixed(2);
+  $("capv").textContent = $("cap").value + " %"; $("lgdv").textContent = $("lgd").value + " %"; $("shockv").textContent = $("shock").value + " %";
+  $("formula").innerHTML = `On average a bank fails when it has lost <b>${(100 * tau).toFixed(0)} %</b> of what it lent ` +
+    `(threshold tau = capital after shock / loss rate = <b>${tau.toFixed(2)}</b>). ` +
+    (tau >= 0.85 ? "This is the range of real banks: one failure does little." : tau >= 0.6 ? "Banks are weaker than real ones." : "This is a stressed case: banks are much weaker than real ones.");
   if (!keepTrigger) trigger = null;
   shown = 99; clearInterval(timer);
   tiles(); strip(); tables(); reading(); paint();
@@ -263,12 +300,19 @@ function load() {
   buildNetwork(); recompute(false);
 }
 
-$("legend").innerHTML =
-  `<span><i style="background:var(--bank)"></i>survives</span><span><i style="background:var(--trigger)"></i>fails first</span>` +
-  [1, 2, 3].map((r) => `<span><i style="background:var(--r${r})"></i>fails in round ${r}</span>`).join("") +
-  `<span><i style="background:var(--r4)"></i>round 4 or later</span><span>Dot size: how much the bank lends</span>`;
+function legend() {
+  $("legend").innerHTML = view === "frag"
+    ? `<span><i style="background:var(--bank)"></i>never brought down</span>` +
+      [1, 2, 3, 4].map((r) => `<span><i style="background:var(--r${r})"></i>${["sometimes", "more often", "often", "most often"][r - 1]}</span>`).join("") +
+      `<span>Colour: in how many of the other banks' failures this bank falls</span>`
+    : `<span><i style="background:var(--bank)"></i>survives</span><span><i style="background:var(--trigger)"></i>fails first</span>` +
+      [1, 2, 3].map((r) => `<span><i style="background:var(--r${r})"></i>fails in round ${r}</span>`).join("") +
+      `<span><i style="background:var(--r4)"></i>round 4 or later</span><span>Thick line: a loss that brought a bank down. Thin coloured line: a loss that the lender survived. Dot size: how much the bank lends</span>`;
+}
 $("which").addEventListener("change", load);
-$("tau").addEventListener("input", () => recompute(true));
+for (const id of ["cap", "lgd", "shock"]) $(id).addEventListener("input", () => recompute(true));
+$("v-cascade").addEventListener("click", () => setView("cascade"));
+$("v-frag").addEventListener("click", () => setView("frag"));
 $("worst").addEventListener("click", () => fail(all.sizes.indexOf(Math.max(...all.sizes))));
 $("replay").addEventListener("click", animate);
 window.addEventListener("resize", strip);

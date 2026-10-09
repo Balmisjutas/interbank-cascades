@@ -8,8 +8,8 @@ real bank-to-bank exposures are confidential, so every network here is simulated
 
 ## See it
 
-An interactive page shows the cascades: choose a network, set how strong the banks are, click a bank to make it
-fail. Open `docs/index.html` in a browser, or the hosted copy: https://balmisjutas.github.io/interbank-cascades/
+An interactive page shows the cascades: choose a network, set the capital of the banks, the loss rate and a common
+shock, then click a bank to make it fail. A second view colours the banks by how fragile they are. Open `docs/index.html` in a browser, or the hosted copy: https://balmisjutas.github.io/interbank-cascades/
 
 [![The interactive page](figures/viewer.png)](https://balmisjutas.github.io/interbank-cascades/)
 
