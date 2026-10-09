@@ -110,10 +110,13 @@ def randomise_edges(net: Network, fraction: float, rng) -> Network:
     """Degree-preserving edge randomisation (double edge swaps).
 
     Two links (i -> j) and (k -> l) become (i -> l) and (k -> j). Each lender
-    keeps its number of borrowers AND its own set of amounts, so its interbank
+    keeps its number of borrowers AND the amounts it lent, so its interbank
     assets, its capital and its threshold do not change. Each borrower keeps
-    its number of lenders. Only WHO is linked to whom changes.
-    `fraction` is the share of links that we try to move (1.0 = every link once).
+    its number of lenders, but not the amounts it owes. Only WHO is linked to
+    whom changes.
+    `fraction` * (number of links) / 2 swaps are made. A link can be picked more
+    than once, so the share of links that really change place is lower than
+    `fraction` (about 55 to 60 % at fraction 1.0). Measure it; do not assume it.
     """
     E = net.E.copy()
     lenders, borrowers = np.nonzero(E)

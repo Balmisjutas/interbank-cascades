@@ -46,8 +46,8 @@ def cascade(E: np.ndarray, capital: np.ndarray, trigger: int, lgd: float = 0.6):
     return failed, rounds, loss_share
 
 
-def all_cascades(E: np.ndarray, capital: np.ndarray, lgd: float = 0.6, triggers=None):
-    """Run one cascade per trigger bank, all at once.
+def all_cascades(E: np.ndarray, capital: np.ndarray, lgd: float = 0.6, triggers=None, max_rounds=None):
+    """Run one cascade per trigger bank, all at once. `max_rounds` stops the cascade early.
 
     Returns (F, R, L), each of shape (n_triggers, n):
         F[s, i]  True if bank i failed in the scenario where triggers[s] fails first
@@ -63,7 +63,7 @@ def all_cascades(E: np.ndarray, capital: np.ndarray, lgd: float = 0.6, triggers=
     R[np.arange(s), triggers] = 0
     Et = E.T.astype(float)
     k = 0
-    while True:
+    while max_rounds is None or k < max_rounds:
         k += 1
         loss = lgd * (F.astype(float) @ Et)  # loss[s, i] = lgd * sum_j F[s, j] E[i, j]
         newly = (~F) & (loss >= capital[None, :])
@@ -94,19 +94,17 @@ def summarise(F: np.ndarray, R: np.ndarray) -> dict:
 def fragility(F: np.ndarray) -> np.ndarray:
     """Share of the scenarios started by ANOTHER bank in which each bank fails."""
     s, n = F.shape
-    own = np.zeros(n)
-    if s == n:
-        own = np.diag(F).astype(float)
-    return (F.sum(axis=0) - own) / max(s - 1, 1)
+    assert s == n, "fragility needs one scenario per bank, in order"
+    return (F.sum(axis=0) - np.diag(F)) / (n - 1)
 
 
 def hit_share(L: np.ndarray, level: float = 0.10) -> np.ndarray:
     """Share of the scenarios started by another bank in which a bank loses more
     than `level` of its capital (the definition used in ACPR Debats no. 15)."""
     s, n = L.shape
+    assert s == n, "hit_share needs one scenario per bank, in order"
     H = L > level
-    own = np.diag(H).astype(float) if s == n else np.zeros(n)
-    return (H.sum(axis=0) - own) / max(s - 1, 1)
+    return (H.sum(axis=0) - np.diag(H)) / (n - 1)
 
 
 def importance(F: np.ndarray) -> np.ndarray:

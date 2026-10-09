@@ -61,19 +61,38 @@ def precision_at_10pct(y, p) -> float:
     return float((y[top] >= cut).mean())
 
 
-def score(samples, predict, target="y") -> dict:
-    sp, pr = [], []
+def concordance(y, p) -> float:
+    """Among the pairs of banks with DIFFERENT true fragility, the share that the
+    model puts in the right order (a tie in the prediction counts one half).
+    0.5 is chance, 1 is perfect. Unlike Spearman, it does not punish a model for
+    ordering banks that have exactly the same label."""
+    dy = y[:, None] - y[None, :]
+    dp = p[:, None] - p[None, :]
+    pairs = dy > 0
+    if not pairs.any():
+        return np.nan
+    return float(((dp > 0) & pairs).sum() + 0.5 * ((dp == 0) & pairs).sum()) / float(pairs.sum())
+
+
+def score_rows(samples, predict, target="y") -> list[dict]:
+    """One row of scores per test network."""
+    rows = []
     for s in samples:
         y, p = getattr(s, target), predict(s)
-        sp.append(spearman(y, p))
-        pr.append(precision_at_10pct(y, p))
-    return {"spearman": float(np.nanmean(sp)), "spearman_sd": float(np.nanstd(sp)),
-            "precision10": float(np.nanmean(pr))}
+        rows.append({"network": s.net.seed, "spearman": spearman(y, p),
+                     "concordance": concordance(y, p), "precision10": precision_at_10pct(y, p)})
+    return rows
+
+
+def score(samples, predict, target="y") -> dict:
+    rows = score_rows(samples, predict, target)
+    return {k: float(np.nanmean([r[k] for r in rows])) for k in ("spearman", "concordance", "precision10")}
 
 
 # ---------------------------------------------------------------- boosting
 
 def fit_boosting(train, rung: int, seed: int = 0, target="y"):
+    """Default settings. With no subsampling the fit is deterministic: `seed` changes nothing."""
     X = np.vstack([s.X[rung] for s in train])
     y = np.concatenate([getattr(s, target) for s in train])
     model = HistGradientBoostingRegressor(random_state=seed).fit(X, y)
@@ -137,23 +156,36 @@ class GNN(nn.Module):
         return self.out(h).squeeze(-1)
 
 
-def fit_neural(train, kind: str, rung: int, seed: int, target="y"):
+def fit_neural(train, kind: str, rung: int, seed: int, target="y", validation=None, max_epochs=EPOCHS):
     """Returns predict(sample, mode="normal"). `mode` changes the edges given to
-    the GNN at prediction time: "normal", "none" or "reversed"."""
+    the GNN at prediction time: "normal", "none" or "reversed".
+
+    With `validation` (a list of samples that are NOT in `train`), the weights
+    kept are those of the epoch with the best rank correlation on the validation
+    networks, checked every 10 epochs. This variant was added after the first
+    run; the protocol of PREDICTION.md is the call without `validation`."""
     torch.manual_seed(seed)
     sc = Scaler(train, rung, target)
     model = (GNN if kind == "gnn" else MLP)(train[0].X[rung].shape[1])
     data = [(sc.x(s), *edges(s.net), sc.y(s)) for s in train]
     opt = torch.optim.Adam(model.parameters(), lr=LR)
-    for _ in range(EPOCHS):
+
+    def predict(s, mode="normal"):
+        model.eval()
+        with torch.no_grad():
+            return model(sc.x(s), *edges(s.net, mode)).numpy()
+
+    best, best_state = -np.inf, None
+    for epoch in range(1, max_epochs + 1):
+        model.train()
         opt.zero_grad()
         loss = sum(((model(x, ei, ew) - y) ** 2).mean() for x, ei, ew, y in data) / len(data)
         loss.backward()
         opt.step()
-    model.eval()
-
-    def predict(s, mode="normal"):
-        with torch.no_grad():
-            return model(sc.x(s), *edges(s.net, mode)).numpy()
-
+        if validation and epoch % 10 == 0:
+            val = np.nanmean([spearman(getattr(s, target), predict(s)) for s in validation])
+            if val > best:
+                best, best_state = val, {k: v.clone() for k, v in model.state_dict().items()}
+    if best_state is not None:
+        model.load_state_dict(best_state)
     return predict

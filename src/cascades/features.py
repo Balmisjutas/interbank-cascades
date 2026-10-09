@@ -4,7 +4,7 @@ rung 1  own threshold tau
 rung 2  + size and number of counterparties
 rung 3  + the bank's own row of exposures (how concentrated its lending is)
 rung 4  + the same numbers for its borrowers, summed up by hand (sum, mean, max, min, weighted mean)
-rung 5  + centrality in the whole network (eigenvector, hub, authority)
+rung 5  + centrality in the whole network (PageRank, hub, authority)
 
 Rungs 1 to 3 use only what a bank knows about itself. They do not change when
 the links are randomised with `generate.randomise_edges`.
@@ -61,20 +61,18 @@ def neighbour_features(net: Network, X: np.ndarray) -> np.ndarray:
 
 
 def centrality_features(net: Network) -> np.ndarray:
+    """PageRank, hub and authority scores.
+
+    PageRank is computed on the reversed graph (links from borrower to lender,
+    the direction of the losses): a bank scores high when it lends to banks
+    that score high. Eigenvector centrality is not used because it is not
+    defined on these sparse directed networks (they are not strongly connected).
+    """
     G = nx.from_numpy_array(net.E, create_using=nx.DiGraph)
     n = net.n
-    try:
-        eig = nx.eigenvector_centrality_numpy(G.reverse(), weight="weight")
-        eig = np.abs(np.array([eig[i] for i in range(n)]))
-    except Exception:
-        eig = np.zeros(n)
-    try:
-        hubs, auth = nx.hits(G, max_iter=500)
-        hubs = np.array([hubs[i] for i in range(n)])
-        auth = np.array([auth[i] for i in range(n)])
-    except Exception:
-        hubs, auth = np.zeros(n), np.zeros(n)
-    return np.column_stack([eig, hubs, auth])
+    pr = nx.pagerank(G.reverse(), weight="weight")
+    hubs, auth = nx.hits(G, max_iter=1000)
+    return np.column_stack([[pr[i] for i in range(n)], [hubs[i] for i in range(n)], [auth[i] for i in range(n)]])
 
 
 def ladder(net: Network) -> dict[int, np.ndarray]:
