@@ -300,14 +300,16 @@ function load() {
   buildNetwork(); recompute(false);
 }
 
+// Legend dots are drawn as SVG circles, like the banks, so that they always show the same colour as the banks.
+const dot = (color) => `<svg width="12" height="12" viewBox="0 0 12 12" style="vertical-align:-1px;margin-right:5px" aria-hidden="true"><circle cx="6" cy="6" r="5.5" fill="${color}"/></svg>`;
 function legend() {
   $("legend").innerHTML = view === "frag"
-    ? `<span><i style="background:var(--bank)"></i>never brought down</span>` +
-      [1, 2, 3, 4].map((r) => `<span><i style="background:var(--r${r})"></i>${["sometimes", "more often", "often", "most often"][r - 1]}</span>`).join("") +
+    ? `<span>${dot("var(--bank)")}never brought down</span>` +
+      [1, 2, 3, 4].map((r) => `<span>${dot(`var(--r${r})`)}${["sometimes", "more often", "often", "most often"][r - 1]}</span>`).join("") +
       `<span>Colour: in how many of the other banks' failures this bank falls</span>`
-    : `<span><i style="background:var(--bank)"></i>survives</span><span><i style="background:var(--trigger)"></i>fails first</span>` +
-      [1, 2, 3].map((r) => `<span><i style="background:var(--r${r})"></i>fails in round ${r}</span>`).join("") +
-      `<span><i style="background:var(--r4)"></i>round 4 or later</span><span>Thick line: a loss that brought a bank down. Thin coloured line: a loss that the lender survived. Dot size: how much the bank lends</span>`;
+    : `<span>${dot("var(--bank)")}survives</span><span>${dot("var(--trigger)")}fails first</span>` +
+      [1, 2, 3].map((r) => `<span>${dot(`var(--r${r})`)}fails in round ${r}</span>`).join("") +
+      `<span>${dot("var(--r4)")}round 4 or later</span><span>Thick line: a loss that brought a bank down. Thin coloured line: a loss that the lender survived. Dot size: how much the bank lends</span>`;
 }
 $("which").addEventListener("change", load);
 for (const id of ["cap", "lgd", "shock"]) $(id).addEventListener("input", () => recompute(true));
